@@ -1,3 +1,13 @@
+import os
+import argparse
+import torch
+import time
+from tqdm import tqdm
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+import torch.distributed as dist
+
 # Copyright (c) OpenMMLab. All rights reserved.
 import argparse
 import os
@@ -7,36 +17,27 @@ from mmengine.config import Config, DictAction
 from mmengine.runner import Runner
 
 from mmaction.registry import RUNNERS
-
 from mmengine.registry import HOOKS
 from mmengine.hooks import Hook
 
 @HOOKS.register_module()
 class SaveInitParams(Hook):
-    def __init__(self):
+    def __init__(self) -> None:
         ...
     def before_train(self, runner) -> None:
-        runner.logger.info('Saving Initial Params...')
-        runner.logger.info(runner.model)
-        trajectory.append([p.detach().cpu() for p in runner.model.parameters()])
-        # self.save=False
-    # def before_run(self, runner) -> None:
-    #     runner.logger.info('Saving Initial Params...')
-    #     trajectory.append([p.detach().cpu() for p in runner.parameters()])
+        # try:
+        rank = dist.get_rank()
+        # except:
+        #     rank = 0
+        if rank == 0:
+            runner.logger.info('Saving Initial Params...')
+            timestamps.append([p.detach().cpu() for p in runner.model.parameters()])
 
 
 @HOOKS.register_module()
 class SaveEpochTrajectory(Hook):
-    """Check invalid loss hook.
-    This hook will regularly check whether the loss is valid
-    during training.
-    Args:
-        interval (int): Checking interval (every k iterations).
-            Defaults to 50.
-    """
     def __init__(self, interval=5):
         self.interval = interval
-        # self.trajectory = trajectory
     def after_train_epoch(self, runner, data_batch=None, outputs=None):
         """All subclasses should override this method, if they need any
         operations after each training iteration.
@@ -46,15 +47,27 @@ class SaveEpochTrajectory(Hook):
             data_batch (dict or tuple or list, optional): Data from dataloader.
             outputs (dict, optional): Outputs from model.
         """
-        if self.every_n_epochs(runner, self.interval):
+        # try:
+        rank = dist.get_rank()
+        # except:
+        #     rank = 0
+        if rank == 0 and self.every_n_epochs(runner, self.interval):
             runner.logger.info('Saving Epoch Trajectory...')
-            trajectory.append([p.detach().cpu() for p in runner.model.parameters()])
-
+            timestamps.append([p.detach().cpu() for p in runner.model.parameters()])
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a action recognizer')
+    
+    parser.add_argument('--dataset', type=str, default='ucf101', help='dataset')
+    # parser.add_argument('--subset', type=str, default='imagenette', help='subset')
+    parser.add_argument('--model', type=str, default='tsn', help='model')
+    parser.add_argument('--buffer_path', type=str, default='/data/haochuan/buffers', help='buffer path')
+    parser.add_argument('--save_interval', type=int, default=10)
+    parser.add_argument('--num_experts', type=int, default=100, help='training iterations')
+    
     parser.add_argument('config', help='train config file path')
+    
     parser.add_argument('--work-dir', help='the dir to save logs and models')
     parser.add_argument(
         '--resume',
@@ -162,35 +175,64 @@ def merge_args(cfg, args):
 
 
 def main():
-    global trajectory
-    trajectory = []
+    # try:
+    # rank = dist.get_rank()
+    # except:
+#     rank = 0
+    #     print('No distributed setting')
+    
     custom_hooks = [
         dict(type='SaveEpochTrajectory', interval=1),
         dict(type='SaveInitParams')
     ]
+    
     args = parse_args()
-
+    
+    save_dir = os.path.join(args.buffer_path, args.dataset)
+    save_dir = os.path.join(save_dir, args.model)
+    
+    # common settings for experts
     cfg = Config.fromfile(args.config)
-
     # merge cli arguments to config
     cfg = merge_args(cfg, args)
-    # compile_options = dict(mode='max-autotune')
-    # cfg.compile=compile_options
-    # cfg['custom_hooks'] = custom_hooks
-    # build the runner from config
-    if 'runner_type' not in cfg:
-        # build the default runner
-        runner = Runner.from_cfg(cfg)
-    else:
-        # build customized runner from the registry
-        # if 'runner_type' is set in the cfg
+    # add trajectory save hook
+    cfg['custom_hooks'] = custom_hooks
+    
+    global timestamps
+    trajectories = []
+    
+    for it in tqdm(range(args.num_experts),unit="exp"):
+        timestamps = []
+        # set different initial params
+        cfg.randomness = dict(
+                        seed=int(time.time() * 1000) % 100000,
+                        diff_rank_seed=args.diff_rank_seed,
+                        deterministic=args.deterministic)
+        
+        # will save the params before training and after each epoch
         runner = RUNNERS.build(cfg)
+        
+        runner.train()
+        
+        rank = dist.get_rank()
+        if rank == 0:
+            print("Expert {} seed:{}".format(it+1, cfg.randomness['seed']))
+        
+        # add expert trajectory
+        if rank == 0:
+            trajectories.append(timestamps)
 
-    
-    
-    # start training
-    runner.train()
-
+        if len(trajectories) == args.save_interval and rank == 0:
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
+            n = 0
+            while os.path.exists(os.path.join(save_dir, "replay_buffer_{}.pt".format(n))):
+                n += 1
+            print("Saving {}".format(os.path.join(save_dir, "replay_buffer_{}.pt".format(n))))
+            torch.save(trajectories, os.path.join(save_dir, "replay_buffer_{}.pt".format(n)))
+            trajectories = []
     
 if __name__ == '__main__':
     main()
+
+
