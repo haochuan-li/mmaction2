@@ -6,6 +6,7 @@ from .mobilenet_v2 import MobileNetV2
 from .mobilenet_v2_tsm import MobileNetV2TSM
 from .mvit import MViT
 from .resnet import ResNet
+from .custom_models import ConvNet
 from .resnet2plus1d import ResNet2Plus1d
 from .resnet3d import ResNet3d, ResNet3dLayer
 from .resnet3d_csn import ResNet3dCSN

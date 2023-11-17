@@ -4,19 +4,20 @@ _base_ = [
 ]
 
 # dataset settings
-dataset_type = 'VideoDataset'
-data_root = 'data/ucf101/videos'
-data_root_val = 'data/ucf101/videos'
+dataset_type = 'RawframeDataset'
+data_root = './data/ucf101/rawframes'
+data_root_val = './data/ucf101/rawframes'
 split = 1  # official train/test splits. valid numbers: 1, 2, 3
-ann_file_train = f'data/ucf101/ucf101_train_split_{split}_videos.txt'
-ann_file_val = f'data/ucf101/ucf101_val_split_{split}_videos.txt'
-ann_file_test = f'data/ucf101/ucf101_val_split_{split}_videos.txt'
+ann_file_train = f'./data/ucf101/ucf101_train_split_{split}_rawframes.txt'
+ann_file_val = f'./data/ucf101/ucf101_val_split_{split}_rawframes.txt'
+ann_file_test = f'./data/ucf101/ucf101_val_split_{split}_rawframes.txt'
 
 file_client_args = dict(io_backend='disk')
 train_pipeline = [
-    dict(type='DecordInit', **file_client_args),
-    dict(type='SampleFrames', clip_len=16, frame_interval=1, num_clips=1),
-    dict(type='DecordDecode'),
+    # dict(type='DecordInit', **file_client_args),
+    dict(type='SampleFrames', clip_len=1, frame_interval=1, num_clips=1),
+    # dict(type='DecordDecode'),
+    dict(type='RawFrameDecode'),
     dict(type='Resize', scale=(-1, 128)),
     dict(type='RandomCrop', size=112),
     dict(type='Flip', flip_ratio=0.5),
@@ -24,28 +25,30 @@ train_pipeline = [
     dict(type='PackActionInputs')
 ]
 val_pipeline = [
-    dict(type='DecordInit', **file_client_args),
+    # dict(type='DecordInit', **file_client_args),
     dict(
         type='SampleFrames',
         clip_len=16,
         frame_interval=1,
         num_clips=1,
         test_mode=True),
-    dict(type='DecordDecode'),
+    # dict(type='DecordDecode'),
+    dict(type='RawFrameDecode'),
     dict(type='Resize', scale=(-1, 128)),
     dict(type='CenterCrop', crop_size=112),
     dict(type='FormatShape', input_format='NCTHW'),
     dict(type='PackActionInputs')
 ]
 test_pipeline = [
-    dict(type='DecordInit', **file_client_args),
+    # dict(type='DecordInit', **file_client_args),
     dict(
         type='SampleFrames',
         clip_len=16,
         frame_interval=1,
         num_clips=10,
         test_mode=True),
-    dict(type='DecordDecode'),
+    # dict(type='DecordDecode'),
+    dict(type='RawFrameDecode'),
     dict(type='Resize', scale=(-1, 128)),
     dict(type='CenterCrop', crop_size=112),
     dict(type='FormatShape', input_format='NCTHW'),
@@ -53,35 +56,38 @@ test_pipeline = [
 ]
 
 train_dataloader = dict(
-    batch_size=30,
+    batch_size=32,
     num_workers=8,
+    pin_memory=True,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
     dataset=dict(
         type=dataset_type,
         ann_file=ann_file_train,
-        data_prefix=dict(video=data_root),
+        data_prefix=dict(img=data_root),
         pipeline=train_pipeline))
 val_dataloader = dict(
-    batch_size=30,
+    batch_size=32,
     num_workers=8,
+    pin_memory=True,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         ann_file=ann_file_val,
-        data_prefix=dict(video=data_root_val),
+        data_prefix=dict(img=data_root_val),
         pipeline=val_pipeline,
         test_mode=True))
 test_dataloader = dict(
     batch_size=1,
     num_workers=8,
+    pin_memory=True,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         ann_file=ann_file_test,
-        data_prefix=dict(video=data_root_val),
+        data_prefix=dict(img=data_root_val),
         pipeline=test_pipeline,
         test_mode=True))
 
@@ -113,4 +119,4 @@ default_hooks = dict(checkpoint=dict(interval=5))
 #   - `enable` means enable scaling LR automatically
 #       or not by default.
 #   - `base_batch_size` = (8 GPUs) x (30 samples per GPU).
-auto_scale_lr = dict(enable=False, base_batch_size=240)
+auto_scale_lr = dict(enable=False, base_batch_size=256)

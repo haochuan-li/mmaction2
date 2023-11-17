@@ -220,6 +220,25 @@ class BaseRecognizer(BaseModel, metaclass=ABCMeta):
         """
         feats, _ = self.extract_feat(inputs, stage=stage)
         return feats
+    
+    def _forward_logits(self,
+                 inputs: torch.Tensor,
+                 stage: str = 'backbone',
+                 **kwargs) -> ForwardResults:
+        """Network forward process. Usually includes backbone, neck and head
+        forward without any post-processing.
+
+        Args:
+            inputs (torch.Tensor): Raw Inputs of the recognizer.
+            stage (str): Which stage to output the features.
+
+        Returns:
+            Union[tuple, torch.Tensor]: Features from ``backbone`` or ``neck``
+            or ``head`` forward.
+        """
+        feats, _ = self.extract_feat(inputs, stage=stage)
+        logits = self.cls_head(feats, inputs.shape[1])
+        return logits
 
     def forward(self,
                 inputs: torch.Tensor,
@@ -256,10 +275,12 @@ class BaseRecognizer(BaseModel, metaclass=ABCMeta):
         """
         if mode == 'tensor':
             return self._forward(inputs, **kwargs)
-        if mode == 'predict':
+        elif mode == 'predict':
             return self.predict(inputs, data_samples, **kwargs)
         elif mode == 'loss':
             return self.loss(inputs, data_samples, **kwargs)
+        elif mode == 'logit':
+            return self._forward_logits(inputs,**kwargs)
         else:
             raise RuntimeError(f'Invalid mode "{mode}". '
                                'Only supports loss, predict and tensor mode')

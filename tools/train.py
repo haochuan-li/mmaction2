@@ -1,4 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from mmaction.utils import register_all_modules
+
+register_all_modules(init_default_scope=True)
+
 import argparse
 import os
 import os.path as osp
@@ -174,6 +178,7 @@ def main():
 
     # merge cli arguments to config
     cfg = merge_args(cfg, args)
+    cfg['visualizer']=dict(type='Visualizer', vis_backends=[dict(type='WandbVisBackend')])
     # compile_options = dict(mode='max-autotune')
     # cfg.compile=compile_options
     # cfg['custom_hooks'] = custom_hooks
@@ -190,6 +195,9 @@ def main():
     
     # start training
     runner.train()
+    # print("Runner Dict:",runner.__dict__)
+    # print("Message_Hub",runner.message_hub.get_info())
+    print("Message_Hub Best Val Score:",runner.message_hub.get_info("best_score"))
 
     
 if __name__ == '__main__':

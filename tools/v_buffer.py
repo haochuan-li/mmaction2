@@ -34,6 +34,7 @@ class SaveInitParams(Hook):
             timestamps.append([p.detach().cpu() for p in runner.model.parameters()])
 
 
+
 @HOOKS.register_module()
 class SaveEpochTrajectory(Hook):
     def __init__(self, interval=5):
@@ -184,6 +185,7 @@ def main():
     custom_hooks = [
         dict(type='SaveEpochTrajectory', interval=1),
         dict(type='SaveInitParams')
+        # dict(type='Test')
     ]
     
     args = parse_args()
